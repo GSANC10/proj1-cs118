@@ -40,28 +40,101 @@ struct timeval now;   // Temp for current time
 
 // Get data from standard input / make handshake packets
 packet* get_data() {
+    static bool syn_sent = false;
+    static bool synack_sent = false;
+
+    packet* pkt =  (packet*) malloc(sizeof(packet));
+    if (!pkt) return NULL;
+    memset(pkt, 0, sizeof(packet));;
+    
     switch (state) {
-    case SERVER_AWAIT:
-    case CLIENT_AWAIT:
+    //Start connection, send syn
     case CLIENT_START:
-    case SERVER_START:
-    default: {
+        if(!syn_sent){
+            pkt->seq = htons(seq);
+            pkt->ack = 0;
+            pkt->length = htons(0);
+            pkt->win = htons(our_max_receiving_window);
+            pkt->flags = SYN;
+            syn_sent = true;
+            state = CLIENT_AWAIT;
+            print_diag(pkt, SEND);
+            return pkt;
+        }
+        break;
+    //We send our syn+ack
+    case SERVER_AWAIT:
+        if(!synack_sent){
+            pkt->seq = htons(seq);
+            pkt->ack = htons(ack);
+            pkt->length = htons(0);
+            pkt->win = htons(our_max_receiving_window);
+            pkt->flags = SYN | ACK;
+            synack_sent = true;
+            state = NORMAL; // Server done
+            print_diag(pkt, SEND);
+            return pkt;
+        }
+        break;
+    //Default: CLIENT_AWAIT: We wait for SYN+ACK, SERVER_START: Wait for SYN from client
+    default: 
+        break;
     }
-    }
+    freek(pkt);
+    return NULL;
 }
+
+
+
+
+
 
 // Process data received from socket
 void recv_data(packet* pkt) {
+    //Flags are set in a receved packet. Check s
+    uint16_t flags = pkt->flags;
+    //If SYN bit or ACK bit is set in flags this will return true
+    bool syn = flags & SYN;
+    bool ack_flag = flags & ACK;
+
     switch (state) {
-    case CLIENT_START:
+    //The server here is recevied our syn from client so let's store our shit and move to server_await for SYN+ACL, from get_data^
     case SERVER_START:
+        if (syn && !ack_flag) {
+            // Server received SYN from client
+            ack = ntohs(pkt->seq) + 1;       // Remember client's seq + 1
+            state = SERVER_AWAIT;            // Prepare to send SYN+ACK
+        }
+        break;
+    case CLIENT_AWAIT:
+        if (syn && ack_flag) {
+            // Client received SYN+ACK from server
+            ack = ntohs(pkt->seq) + 1;       // Remember server's seq + 1
+            pure_ack = true;                 // Trigger final ACK send in listen_loop()
+        }
+        break;
     case SERVER_AWAIT:
-    case CLIENT_AWAIT: {
+    {
+        if (!syn && ack_flag) {
+            // Server receives final ACK from client
+            state = NORMAL;
+        }
+        break;
+
     }
-    default: {
-    }
+    default:
+        break;
     }
 }
+
+
+
+
+
+
+
+
+
 
 // Main function of transport layer; never quits
 void listen_loop(int sockfd, struct sockaddr_in* addr, int initial_state,
