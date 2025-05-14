@@ -49,10 +49,11 @@ typedef struct {
     uint8_t payload[0];
 } packet;
 
+//Single node in singly linked list
 typedef struct buffer_node {
-    struct buffer_node* next;
-    packet pkt;
-} buffer_node;
+    struct buffer_node* next; //Points to next node
+    packet pkt; //Our cpoied packet (header + payload biatch)  
+} buffer_node; //Pointer is head of our list fanam.
 
 // Helpers
 static inline void print(char* txt) {
